@@ -8,6 +8,7 @@ type AuthContextType = {
   user: User | null;
   session: Session | null;
   isLoading: boolean;
+  role: string | null;
   signInWithGoogle: (redirectTo?: string) => Promise<void>;
   signOut: () => Promise<void>;
 };
@@ -18,7 +19,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [role, setRole] = useState<string | null>(null);
   const supabase = createClient();
+
+  const loadRole = async (userId: string) => {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", userId)
+      .single();
+    if (error) {
+      console.error("Error loading role:", error.message);
+      setRole(null);
+      return;
+    }
+    setRole(data?.role ?? null);
+  };
 
   useEffect(() => {
     // Get initial session
@@ -28,6 +44,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } = await supabase.auth.getSession();
       setSession(session);
       setUser(session?.user ?? null);
+      if (session?.user) {
+        await loadRole(session.user.id);
+      } else {
+        setRole(null);
+      }
       setIsLoading(false);
     };
 
@@ -36,9 +57,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Listen for auth changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
+      if (session?.user) {
+        await loadRole(session.user.id);
+      } else {
+        setRole(null);
+      }
       setIsLoading(false);
     });
 
@@ -74,6 +100,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     user,
     session,
     isLoading,
+    role,
     signInWithGoogle,
     signOut,
   };

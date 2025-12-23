@@ -1,12 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Calendar, dateFnsLocalizer, Views, View } from "react-big-calendar";
 import { format, parse, startOfWeek, getDay } from "date-fns";
 import { enUS } from "date-fns/locale";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import { Plus } from "lucide-react";
 import CreateEventModal from "./CreateEventModal";
+import {
+  combineDateAndTimeInTimezone,
+  formatTimeInTimezone,
+} from "@/lib/timezone";
 
 const locales = {
   "en-US": enUS,
@@ -25,6 +29,13 @@ type CalendarEvent = {
   title: string;
   start: Date;
   end: Date;
+  subShifts: {
+    id: string;
+    roleName: string;
+    startTime: string;
+    endTime: string;
+    capacity: number;
+  }[];
   resource: { filled: number; capacity: number; isCritical: boolean };
 };
 
@@ -33,69 +44,113 @@ export default function AdminCalendar() {
   const [view, setView] = useState<View>(Views.MONTH);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
+  const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
+  const [timezone, setTimezone] = useState<string>("Europe/Brussels");
 
-  // Load events from API
   useEffect(() => {
-    const load = async () => {
-      const res = await fetch("/api/events");
-      if (!res.ok) return;
-      const data = await res.json();
-      const mapped: CalendarEvent[] = data.map((evt: any) => ({
-        id: evt.id,
-        title: evt.title,
-        start: new Date(evt.start_time),
-        end: new Date(evt.end_time),
-        resource: {
-          filled: evt.filled ?? 0,
-          capacity: evt.capacity ?? 0,
-          isCritical: false,
-        },
-      }));
-      setEvents(mapped);
-    };
-    load();
+    // Load timezone setting
+    fetch("/api/settings")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.timezone) {
+          setTimezone(data.timezone);
+        }
+      })
+      .catch(() => {});
   }, []);
 
+  const combineDateAndTime = (date: string, time: string) =>
+    combineDateAndTimeInTimezone(date, time, timezone);
+
+  const loadEvents = async () => {
+    const res = await fetch("/api/events");
+    if (!res.ok) return;
+    const data = await res.json();
+    const mapped: CalendarEvent[] = data.map((evt: any) => ({
+      id: evt.id,
+      title: evt.title,
+      start: new Date(evt.start_time),
+      end: new Date(evt.end_time),
+      subShifts: (evt.sub_shifts || []).map((s: any, idx: number) => ({
+        id: s.id || `${evt.id}-${idx}`,
+        roleName: s.role_name,
+        startTime: formatTimeInTimezone(new Date(s.start_time), timezone),
+        endTime: formatTimeInTimezone(new Date(s.end_time), timezone),
+        capacity: s.capacity ?? 0,
+      })),
+      resource: {
+        filled: evt.filled ?? 0,
+        capacity: evt.capacity ?? 0,
+        isCritical: false,
+      },
+    }));
+    setEvents(mapped);
+  };
+
+  useEffect(() => {
+    loadEvents();
+  }, [timezone]);
+
   const handleSelectSlot = ({ start }: { start: Date }) => {
-    setSelectedDate(start);
+    setEditingEvent(null);
+    // Fix: Use the date directly without timezone conversion that causes off-by-one
+    // The calendar gives us a Date object in local time, use it as-is
+    const adjustedDate = new Date(start);
+    adjustedDate.setHours(12, 0, 0, 0); // Set to noon to avoid timezone issues
+    setSelectedDate(adjustedDate);
     setIsModalOpen(true);
   };
 
-  const handleSaveEvent = async (newEvent: any) => {
-    const res = await fetch("/api/events", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: newEvent.title,
-        start_time: newEvent.start.toISOString(),
-        end_time: newEvent.end.toISOString(),
-        sub_shifts: newEvent.subShifts.map((s: any) => ({
-          role_name: s.roleName,
-          start_time: `${newEvent.start.toISOString().split("T")[0]}T${s.startTime}:00Z`,
-          end_time: `${newEvent.end.toISOString().split("T")[0]}T${s.endTime}:00Z`,
-          capacity: s.capacity,
-        })),
-      }),
+  const handleSaveEvent = async (eventData: any) => {
+    const { id, title, dates, startTime, endTime, subShifts } = eventData;
+    const buildPayload = (dateStr: string) => ({
+      title,
+      start_time: combineDateAndTime(dateStr, startTime),
+      end_time: combineDateAndTime(dateStr, endTime),
+      sub_shifts: subShifts.map((s: any) => ({
+        role_name: s.roleName,
+        start_time: combineDateAndTime(dateStr, s.startTime),
+        end_time: combineDateAndTime(dateStr, s.endTime),
+        capacity: s.capacity,
+      })),
     });
-    if (!res.ok) {
-      // Could show error toast
-      return;
+
+    if (editingEvent || id) {
+      const targetDate = dates[0];
+      const res = await fetch("/api/events", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: editingEvent?.id ?? id, ...buildPayload(targetDate) }),
+      });
+      if (!res.ok) return;
+    } else {
+      for (const dateStr of dates) {
+        const res = await fetch("/api/events", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(buildPayload(dateStr)),
+        });
+        if (!res.ok) return;
+      }
     }
-    const created = await res.json();
-    setEvents([
-      ...events,
-      {
-        id: created.id,
-        title: created.title,
-        start: new Date(created.start_time),
-        end: new Date(created.end_time),
-        resource: {
-          filled: 0,
-          capacity: (created.capacity ?? 0),
-          isCritical: false,
-        },
-      },
-    ]);
+
+    await loadEvents();
+    setEditingEvent(null);
+    setIsModalOpen(false);
+  };
+
+  const handleDeleteEvent = async (id: string) => {
+    const res = await fetch(`/api/events?id=${id}`, { method: "DELETE" });
+    if (!res.ok) return;
+    await loadEvents();
+    setEditingEvent(null);
+    setIsModalOpen(false);
+  };
+
+  const handleSelectEvent = (event: any) => {
+    setEditingEvent(event as CalendarEvent);
+    setSelectedDate(new Date(event.start));
+    setIsModalOpen(true);
   };
 
   const eventStyleGetter = (event: any) => {
@@ -111,11 +166,11 @@ export default function AdminCalendar() {
   };
 
   return (
-    <div className="h-[600px] bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+    <div className="h-[600px] bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
       <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-semibold text-slate-800">Event Schedule</h2>
+        <h2 className="text-xl font-semibold text-slate-800 dark:text-white">Event Schedule</h2>
         <button
-          className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-md hover:bg-slate-800 transition-colors text-sm font-medium"
+          className="flex items-center gap-2 bg-slate-900 dark:bg-slate-700 text-white px-4 py-2 rounded-md hover:bg-slate-800 dark:hover:bg-slate-600 transition-colors text-sm font-medium"
           onClick={() => {
             setSelectedDate(new Date());
             setIsModalOpen(true);
@@ -137,6 +192,7 @@ export default function AdminCalendar() {
         onView={setView}
         selectable
         onSelectSlot={handleSelectSlot}
+        onSelectEvent={handleSelectEvent}
         eventPropGetter={eventStyleGetter}
         components={{
           event: ({ event }: any) => (
@@ -152,9 +208,15 @@ export default function AdminCalendar() {
 
       <CreateEventModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => {
+          setIsModalOpen(false);
+          setEditingEvent(null);
+        }}
         onSave={handleSaveEvent}
+        onDelete={editingEvent ? handleDeleteEvent : undefined}
         initialDate={selectedDate}
+        initialEvent={editingEvent ?? undefined}
+        timezone={timezone}
       />
     </div>
   );

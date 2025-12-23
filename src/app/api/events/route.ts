@@ -12,7 +12,7 @@ export async function GET() {
     const admin = getAdmin();
     const { data: events, error: evErr } = await admin
       .from("events")
-      .select("id,title,start_time,end_time")
+      .select("id,title,start_time,end_time,sub_shifts(id,role_name,start_time,end_time,capacity)")
       .order("start_time", { ascending: true });
     if (evErr) throw evErr;
 
@@ -95,5 +95,58 @@ export async function POST(request: Request) {
     return NextResponse.json({ ...ev, capacity: capacityTotal });
   } catch (e: any) {
     return NextResponse.json({ error: e.message ?? "Failed to create" }, { status: 500 });
+  }
+}
+
+export async function PUT(request: Request) {
+  try {
+    const body = await request.json();
+    const { id, title, start_time, end_time, sub_shifts } = body;
+    if (!id || !title || !start_time || !end_time) {
+      return NextResponse.json({ error: "Missing fields" }, { status: 400 });
+    }
+
+    const admin = getAdmin();
+    const { error: evErr } = await admin
+      .from("events")
+      .update({ title, start_time, end_time })
+      .eq("id", id);
+    if (evErr) throw evErr;
+
+    // replace sub_shifts
+    await admin.from("sub_shifts").delete().eq("event_id", id);
+    let capacityTotal = 0;
+    if (Array.isArray(sub_shifts) && sub_shifts.length) {
+      const rows = sub_shifts.map((s: any) => ({
+        event_id: id,
+        role_name: s.role_name,
+        start_time: s.start_time,
+        end_time: s.end_time,
+        capacity: s.capacity ?? 1,
+      }));
+      const { error: ssErr } = await admin.from("sub_shifts").insert(rows);
+      if (ssErr) throw ssErr;
+      capacityTotal = rows.reduce((acc, r) => acc + (r.capacity ?? 0), 0);
+    }
+
+    return NextResponse.json({ id, title, start_time, end_time, capacity: capacityTotal });
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message ?? "Failed to update" }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+    if (!id) {
+      return NextResponse.json({ error: "Missing id" }, { status: 400 });
+    }
+    const admin = getAdmin();
+    const { error } = await admin.from("events").delete().eq("id", id);
+    if (error) throw error;
+    return NextResponse.json({ success: true });
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message ?? "Failed to delete" }, { status: 500 });
   }
 }

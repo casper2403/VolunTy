@@ -2,6 +2,111 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Dark mode support for react-big-calendar */
+.dark .rbc-calendar {
+  color: #e2e8f0;
+}
+
+.dark .rbc-header {
+  background-color: #1e293b;
+  color: #e2e8f0;
+  border-color: #475569;
+}
+
+.dark .rbc-month-view,
+.dark .rbc-time-view,
+.dark .rbc-agenda-view {
+  background-color: #0f172a;
+  border-color: #475569;
+}
+
+.dark .rbc-day-bg {
+  background-color: #1e293b;
+  border-color: #475569;
+}
+
+.dark .rbc-off-range-bg {
+  background-color: #0f172a;
+}
+
+.dark .rbc-today {
+  background-color: #1e40af;
+}
+
+.dark .rbc-toolbar button {
+  color: #e2e8f0;
+  border-color: #475569;
+}
+
+.dark .rbc-toolbar button:hover,
+.dark .rbc-toolbar button:focus {
+  background-color: #334155;
+  color: #e2e8f0;
+}
+
+.dark .rbc-toolbar button.rbc-active {
+  background-color: #475569;
+  color: white;
+}
+
+.dark .rbc-month-row {
+  border-color: #475569;
+}
+
+.dark .rbc-date-cell {
+  color: #cbd5e1;
+}
+
+.dark .rbc-off-range {
+  color: #64748b;
+}
+
+.dark .rbc-time-slot {
+  border-color: #475569;
+}
+
+.dark .rbc-time-header-content {
+  border-color: #475569;
+}
+
+.dark .rbc-timeslot-group {
+  border-color: #475569;
+}
+
+.dark .rbc-current-time-indicator {
+  background-color: #3b82f6;
+}
+
+.dark .rbc-event {
+  border-color: #475569;
+}
+
+.dark .rbc-event-label {
+  color: #cbd5e1;
+}
+
+.dark .rbc-show-more {
+  background-color: #334155;
+  color: #e2e8f0;
+}
+
+.dark .rbc-agenda-view table {
+  border-color: #475569;
+}
+
+.dark .rbc-agenda-view tbody > tr > td {
+  border-color: #475569;
+}
+
+.dark .rbc-agenda-date-cell,
+.dark .rbc-agenda-time-cell {
+  color: #cbd5e1;
+}
+
+.dark .rbc-agenda-event-cell {
+  color: #e2e8f0;
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;

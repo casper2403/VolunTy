@@ -33,8 +33,8 @@ function LoginContent() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-900"></div>
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-900 dark:border-white"></div>
       </div>
     );
   }
@@ -44,25 +44,25 @@ function LoginContent() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+    <main className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-4">
       <div className="max-w-md w-full space-y-8">
         {/* Header */}
         <div className="text-center">
           <Link href="/" className="inline-block">
-            <h1 className="text-4xl font-bold text-slate-900">VolunTy</h1>
+            <h1 className="text-4xl font-bold text-slate-900 dark:text-white">VolunTy</h1>
           </Link>
-          <p className="mt-3 text-slate-600">
+          <p className="mt-3 text-slate-600 dark:text-slate-400">
             Sign in to manage your volunteer schedule
           </p>
         </div>
 
         {/* Auth Card */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 space-y-6">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-8 space-y-6">
           <div className="text-center">
-            <h2 className="text-xl font-semibold text-slate-900">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
               Welcome back
             </h2>
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
               Choose your preferred sign-in method
             </p>
           </div>
@@ -78,7 +78,7 @@ function LoginContent() {
             <button
               onClick={handleGoogleSignIn}
               disabled={isSigningIn}
-              className="w-full flex items-center justify-center gap-3 rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="w-full flex items-center justify-center gap-3 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-4 py-3 text-sm font-medium text-slate-700 dark:text-slate-300 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               <svg
                 className="h-5 w-5"
@@ -109,29 +109,29 @@ function LoginContent() {
 
           <div className="relative">
             <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-slate-200"></div>
+              <div className="w-full border-t border-slate-200 dark:border-slate-700"></div>
             </div>
             <div className="relative flex justify-center text-sm">
-              <span className="bg-white px-2 text-slate-500">
+              <span className="bg-white dark:bg-slate-900 px-2 text-slate-500 dark:text-slate-400">
                 Secure authentication
               </span>
             </div>
           </div>
 
-          <p className="text-center text-xs text-slate-500">
+          <p className="text-center text-xs text-slate-500 dark:text-slate-400">
             By signing in, you agree to our{" "}
-            <a href="#" className="text-slate-700 hover:underline">
+            <a href="#" className="text-slate-700 dark:text-slate-300 hover:underline">
               Terms of Service
             </a>{" "}
             and{" "}
-            <a href="#" className="text-slate-700 hover:underline">
+            <a href="#" className="text-slate-700 dark:text-slate-300 hover:underline">
               Privacy Policy
             </a>
           </p>
         </div>
 
-        <p className="text-center text-sm text-slate-500">
-          <Link href="/" className="text-slate-700 hover:underline">
+        <p className="text-center text-sm text-slate-500 dark:text-slate-400">
+          <Link href="/" className="text-slate-700 dark:text-slate-300 hover:underline">
             ← Back to home
           </Link>
         </p>

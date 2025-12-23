@@ -1,62 +1,66 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Calendar, Clock, MapPin, User, ArrowRightLeft, CheckCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// Mock Data
-const INITIAL_AVAILABLE_SHIFTS = [
-  {
-    id: "1",
-    eventTitle: "Summer Festival",
-    role: "Bar Staff",
-    date: "2025-12-25",
-    startTime: "12:00",
-    endTime: "14:00",
-    location: "Main Tent",
-    spotsFilled: 2,
-    capacity: 4,
-  },
-  {
-    id: "2",
-    eventTitle: "Summer Festival",
-    role: "Ticket Check",
-    date: "2025-12-25",
-    startTime: "10:00",
-    endTime: "12:00",
-    location: "Entrance Gate",
-    spotsFilled: 0,
-    capacity: 2,
-  },
-  {
-    id: "3",
-    eventTitle: "Charity Gala Setup",
-    role: "Logistics",
-    date: "2025-12-26",
-    startTime: "09:00",
-    endTime: "13:00",
-    location: "Grand Hall",
-    spotsFilled: 4,
-    capacity: 5,
-  },
-];
+type AvailableShift = {
+  id: string;
+  eventTitle: string;
+  role: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  location?: string;
+  spotsFilled: number;
+  capacity: number;
+};
 
-const INITIAL_MY_SHIFTS = [
-  {
-    id: "101",
-    eventTitle: "Community Cleanup",
-    role: "Team Leader",
-    date: "2025-12-24",
-    startTime: "08:00",
-    endTime: "12:00",
-    location: "Central Park",
-    status: "confirmed", // confirmed, pending_swap
-  },
-];
+type MyShift = {
+  id: string;
+  eventTitle: string;
+  role: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  location?: string;
+  status: "confirmed" | "pending_swap";
+};
 
 export default function VolunteerShiftList() {
-  const [availableShifts, setAvailableShifts] = useState(INITIAL_AVAILABLE_SHIFTS);
-  const [myShifts, setMyShifts] = useState(INITIAL_MY_SHIFTS);
+  const [availableShifts, setAvailableShifts] = useState<AvailableShift[]>([]);
+  const [myShifts, setMyShifts] = useState<MyShift[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      const res = await fetch("/api/events");
+      if (!res.ok) {
+        setLoading(false);
+        return;
+      }
+      const data = await res.json();
+      const shifts: AvailableShift[] = [];
+      data.forEach((evt: any) => {
+        (evt.sub_shifts ?? []).forEach((s: any, idx: number) => {
+          shifts.push({
+            id: s.id || `${evt.id}-${idx}`,
+            eventTitle: evt.title,
+            role: s.role_name,
+            date: (s.start_time ?? evt.start_time).slice(0, 10),
+            startTime: (s.start_time ?? evt.start_time).slice(11, 16),
+            endTime: (s.end_time ?? evt.end_time).slice(11, 16),
+            spotsFilled: 0,
+            capacity: s.capacity ?? 0,
+          });
+        });
+      });
+      setAvailableShifts(shifts);
+      setLoading(false);
+    };
+    load();
+  }, []);
 
   const handleSignup = (shiftId: string) => {
     const shiftToMove = availableShifts.find((s) => s.id === shiftId);
@@ -91,6 +95,14 @@ export default function VolunteerShiftList() {
     );
     alert("Swap request submitted! Other volunteers can now pick up this shift.");
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-slate-900"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
