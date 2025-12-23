@@ -108,6 +108,7 @@ export async function POST(request: Request) {
       throw insertErr;
     }
 
+    const evt = Array.isArray(subShift.events) ? subShift.events[0] : subShift.events;
     const responsePayload = {
       id: inserted?.id,
       status: inserted?.status ?? "confirmed",
@@ -115,10 +116,10 @@ export async function POST(request: Request) {
       role_name: subShift.role_name,
       start_time: subShift.start_time,
       end_time: subShift.end_time,
-      event_title: subShift.events?.title ?? "",
-      event_location: subShift.events?.location ?? null,
-      event_start_time: subShift.events?.start_time ?? null,
-      event_end_time: subShift.events?.end_time ?? null,
+      event_title: evt?.title ?? "",
+      event_location: evt?.location ?? null,
+      event_start_time: evt?.start_time ?? null,
+      event_end_time: evt?.end_time ?? null,
     };
 
     return NextResponse.json(responsePayload);
