@@ -55,30 +55,37 @@ export function AuthProvider({
     let isMounted = true;
 
     const initialize = async () => {
-      let activeSession = session;
+      try {
+        let activeSession = session;
 
-      if (!activeSession) {
-        const {
-          data: { session: fetchedSession },
-        } = await supabase.auth.getSession();
+        if (!activeSession) {
+          const {
+            data: { session: fetchedSession },
+          } = await supabase.auth.getSession();
 
-        if (!isMounted) return;
+          if (!isMounted) return;
 
-        activeSession = fetchedSession;
-        setSession(fetchedSession);
-        setUser(fetchedSession?.user ?? null);
-      }
+          activeSession = fetchedSession;
+          setSession(fetchedSession);
+          setUser(fetchedSession?.user ?? null);
+        }
 
-      if (activeSession?.user && initialRole === undefined) {
-        await loadRole(activeSession.user.id);
-      }
+        if (activeSession?.user && initialRole === undefined) {
+          await loadRole(activeSession.user.id);
+        }
 
-      if (!activeSession?.user) {
-        setRole(null);
-      }
+        if (!activeSession?.user) {
+          setRole(null);
+        }
 
-      if (isMounted) {
-        setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      } catch (e: any) {
+        console.error("AuthProvider initialization error:", e);
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     };
 
@@ -87,6 +94,7 @@ export function AuthProvider({
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
+      console.log("Auth state changed:", _event, { user: nextSession?.user?.id });
       if (!isMounted) return;
 
       setSession(nextSession);

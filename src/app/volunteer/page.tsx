@@ -1,14 +1,13 @@
 "use client";
 
 import VolunteerShiftList from "@/components/VolunteerShiftList";
-import VolunteerSwapRequests from "@/components/VolunteerSwapRequests";
 import { useAuth } from "@/components/providers/AuthProvider";
 import Link from "next/link";
 import { useState } from "react";
 
 export default function VolunteerPortal() {
   const { user, isLoading } = useAuth();
-  const [activeTab, setActiveTab] = useState<"shifts" | "swaps">("shifts");
+  const [activeTab, setActiveTab] = useState<"my-shifts" | "open-shifts">("my-shifts");
 
   if (isLoading) {
     return (
@@ -52,9 +51,9 @@ export default function VolunteerPortal() {
         {/* Tabs */}
         <div className="flex gap-4 mb-8 border-b border-slate-200">
           <button
-            onClick={() => setActiveTab("shifts")}
+            onClick={() => setActiveTab("my-shifts")}
             className={`px-4 py-3 font-medium border-b-2 transition-colors ${
-              activeTab === "shifts"
+              activeTab === "my-shifts"
                 ? "border-slate-900 text-slate-900"
                 : "border-transparent text-slate-600 hover:text-slate-900"
             }`}
@@ -62,20 +61,19 @@ export default function VolunteerPortal() {
             My Shifts
           </button>
           <button
-            onClick={() => setActiveTab("swaps")}
+            onClick={() => setActiveTab("open-shifts")}
             className={`px-4 py-3 font-medium border-b-2 transition-colors ${
-              activeTab === "swaps"
+              activeTab === "open-shifts"
                 ? "border-slate-900 text-slate-900"
                 : "border-transparent text-slate-600 hover:text-slate-900"
             }`}
           >
-            Swap Requests
+            Open Shifts
           </button>
         </div>
 
         {/* Tab Content */}
-        {activeTab === "shifts" && <VolunteerShiftList />}
-        {activeTab === "swaps" && <VolunteerSwapRequests />}
+        <VolunteerShiftList activeTab={activeTab} />
       </div>
     </div>
   );

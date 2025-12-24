@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Calendar, Clock, MapPin, User, ArrowRightLeft, CheckCircle, Link as LinkIcon, Copy, X } from "lucide-react";
+import { Calendar, Clock, MapPin, User, ArrowRightLeft, CheckCircle, Link as LinkIcon, Copy, X, AlertCircle, Check, Trash2 } from "lucide-react";
 
 type AvailableShift = {
   id: string;
@@ -18,6 +18,7 @@ type AvailableShift = {
 
 type MyShift = {
   id: string;
+  assignmentId: string;
   eventTitle: string;
   role: string;
   date: string;
@@ -27,23 +28,46 @@ type MyShift = {
   status: "confirmed" | "pending_swap";
 };
 
-export default function VolunteerShiftList() {
+type SwapRequest = {
+  id: string;
+  status: "open" | "accepted";
+  created_at: string;
+  share_token: string;
+  role_name: string;
+  start_time: string;
+  end_time: string;
+  event_title: string;
+  event_location: string | null;
+  share_link: string;
+};
+
+type VolunteerShiftListProps = {
+  activeTab: "my-shifts" | "open-shifts";
+};
+
+export default function VolunteerShiftList({ activeTab }: VolunteerShiftListProps) {
   const [availableShifts, setAvailableShifts] = useState<AvailableShift[]>([]);
   const [myShifts, setMyShifts] = useState<MyShift[]>([]);
+  const [swapRequests, setSwapRequests] = useState<SwapRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [calendarToken, setCalendarToken] = useState<string | null>(null);
   const [showCalendarModal, setShowCalendarModal] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState(false);
+  const [copiedSwap, setCopiedSwap] = useState<string | null>(null);
 
   useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      try {
-        const [eventsRes, assignmentsRes, tokenRes] = await Promise.all([
-          fetch("/api/events"),
-          fetch("/api/volunteer/assignments"),
-          fetch("/api/volunteer/assignments/token"),
-        ]);
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [eventsRes, assignmentsRes, tokenRes, swapsRes] = await Promise.all([
+        fetch("/api/events"),
+        fetch("/api/volunteer/assignments"),
+        fetch("/api/volunteer/assignments/token"),
+        fetch("/api/volunteer/swap-requests"),
+      ]);
 
         if (eventsRes.ok) {
           const data = await eventsRes.json();
@@ -76,6 +100,7 @@ export default function VolunteerShiftList() {
             const end = row.end_time ?? row.event_end_time;
             return {
               id: row.sub_shift_id ?? row.id,
+              assignmentId: row.id,
               eventTitle: row.event_title,
               role: row.role_name,
               date: start?.slice(0, 10),
@@ -92,12 +117,15 @@ export default function VolunteerShiftList() {
           const { token } = await tokenRes.json();
           setCalendarToken(token);
         }
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-  }, []);
+
+        if (swapsRes.ok) {
+          const swaps = await swapsRes.json();
+          setSwapRequests(swaps);
+        }
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSignup = async (shiftId: string) => {
     const shiftToMove = availableShifts.find((s) => s.id === shiftId);
@@ -131,6 +159,7 @@ export default function VolunteerShiftList() {
       ...myShifts,
       {
         id: saved.sub_shift_id ?? shiftToMove.id,
+        assignmentId: saved.id,
         eventTitle: saved.event_title ?? shiftToMove.eventTitle,
         role: saved.role_name ?? shiftToMove.role,
         date: shiftToMove.date,
@@ -160,15 +189,34 @@ export default function VolunteerShiftList() {
 
       const { share_link } = await res.json();
 
-      setMyShifts(
-        myShifts.map((s) =>
-          s.id === assignmentId ? { ...s, status: "pending_swap" } : s
-        )
-      );
+      // Reload data to get updated status from server
+      await loadData();
 
       alert(`Swap request created! Share this link with other volunteers:\n\n${window.location.origin}${share_link}`);
     } catch (e) {
       alert("Failed to create swap request");
+    }
+  };
+
+  const copySwapLink = (link: string, id: string) => {
+    navigator.clipboard.writeText(`${window.location.origin}${link}`);
+    setCopiedSwap(id);
+    setTimeout(() => setCopiedSwap(null), 2000);
+  };
+
+  const cancelSwapRequest = async (id: string) => {
+    try {
+      const res = await fetch("/api/volunteer/swap-requests", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      if (!res.ok) throw new Error("Failed to cancel");
+      
+      // Reload data to get updated status from server
+      await loadData();
+    } catch (e: any) {
+      alert("Failed to cancel swap request");
     }
   };
 
@@ -195,27 +243,29 @@ export default function VolunteerShiftList() {
 
   return (
     <div className="space-y-8">
-      {/* Calendar Sync Section */}
-      <section className="rounded-lg border border-blue-200 bg-blue-50 p-4">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <LinkIcon className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
-            <div>
-              <h3 className="font-semibold text-blue-900">Sync to Your Calendar</h3>
-              <p className="text-sm text-blue-700 mt-1">
-                Subscribe to your shift calendar in Google Calendar, Apple Calendar, Outlook, or any calendar app.
-              </p>
+      {activeTab === "my-shifts" && (
+        <>
+          {/* Calendar Sync Section */}
+          <section className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <LinkIcon className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                <div>
+                  <h3 className="font-semibold text-blue-900">Sync to Your Calendar</h3>
+                  <p className="text-sm text-blue-700 mt-1">
+                    Subscribe to your shift calendar in Google Calendar, Apple Calendar, Outlook, or any calendar app.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowCalendarModal(true)}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors flex-shrink-0"
+              >
+                <LinkIcon className="h-4 w-4" />
+                Set Up
+              </button>
             </div>
-          </div>
-          <button
-            onClick={() => setShowCalendarModal(true)}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors flex-shrink-0"
-          >
-            <LinkIcon className="h-4 w-4" />
-            Set Up
-          </button>
-        </div>
-      </section>
+          </section>
 
       {/* Calendar Sync Modal */}
       {showCalendarModal && (
@@ -300,116 +350,216 @@ export default function VolunteerShiftList() {
         </div>
       )}
 
-      {/* My Schedule Section */}
-      <section>
-        <h2 className="text-xl font-bold text-slate-900 mb-4 flex items-center gap-2">
-          <CheckCircle className="h-5 w-5 text-green-600" />
-          My Schedule
-        </h2>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {myShifts.length === 0 ? (
-            <p className="text-slate-500 italic col-span-full">
-              You have no upcoming shifts.
-            </p>
-          ) : (
-            myShifts.map((shift) => (
-              <div
-                key={shift.id}
-                className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm relative overflow-hidden"
-              >
-                {shift.status === "pending_swap" && (
-                  <div className="absolute top-0 right-0 bg-amber-100 text-amber-800 text-xs font-bold px-2 py-1 rounded-bl-lg">
-                    Swap Requested
+          {/* My Schedule Section */}
+          <section>
+            <h2 className="text-xl font-bold text-slate-900 mb-4 flex items-center gap-2">
+              <CheckCircle className="h-5 w-5 text-green-600" />
+              My Schedule
+            </h2>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {myShifts.length === 0 ? (
+                <p className="text-slate-500 italic col-span-full">
+                  You have no upcoming shifts.
+                </p>
+              ) : (
+                myShifts.map((shift) => (
+                  <div
+                    key={shift.id}
+                    className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm relative overflow-hidden"
+                  >
+                    {shift.status === "pending_swap" && (
+                      <div className="absolute top-0 right-0 bg-amber-100 text-amber-800 text-xs font-bold px-2 py-1 rounded-bl-lg">
+                        Swap Requested
+                      </div>
+                    )}
+                    <div className="mb-3">
+                      <h3 className="font-semibold text-lg text-slate-900">
+                        {shift.eventTitle}
+                      </h3>
+                      <p className="text-blue-600 font-medium">{shift.role}</p>
+                    </div>
+                    <div className="space-y-2 text-sm text-slate-600 mb-4">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="h-4 w-4" />
+                        <span>{shift.date}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Clock className="h-4 w-4" />
+                        <span>
+                          {shift.startTime} - {shift.endTime}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <MapPin className="h-4 w-4" />
+                        <span>{shift.location}</span>
+                      </div>
+                    </div>
+                    {shift.status === "confirmed" && (
+                      <button
+                        onClick={() => handleSwapRequest(shift.assignmentId)}
+                        className="w-full flex items-center justify-center gap-2 border border-slate-300 rounded-lg py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                      >
+                        <ArrowRightLeft className="h-4 w-4" />
+                        Request Swap
+                      </button>
+                    )}
                   </div>
-                )}
-                <div className="mb-3">
-                  <h3 className="font-semibold text-lg text-slate-900">
-                    {shift.eventTitle}
-                  </h3>
-                  <p className="text-blue-600 font-medium">{shift.role}</p>
-                </div>
-                <div className="space-y-2 text-sm text-slate-600 mb-4">
-                  <div className="flex items-center gap-2">
-                    <Calendar className="h-4 w-4" />
-                    <span>{shift.date}</span>
+                ))
+              )}
+            </div>
+          </section>
+
+          {/* Swap Requests Section */}
+          {swapRequests.length > 0 && (
+            <section>
+              <h2 className="text-xl font-bold text-slate-900 mb-4 flex items-center gap-2">
+                <ArrowRightLeft className="h-5 w-5 text-amber-600" />
+                My Swap Requests
+              </h2>
+              <div className="grid gap-4 md:grid-cols-2">
+                {swapRequests.map((req) => (
+                  <div
+                    key={req.id}
+                    className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm hover:shadow-md transition-shadow"
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <p className="font-semibold text-slate-900">
+                          {req.event_title}
+                        </p>
+                        <p className="text-sm text-slate-600">
+                          {req.role_name}
+                        </p>
+                      </div>
+                      <span
+                        className={`text-xs font-medium px-2 py-1 rounded-full ${
+                          req.status === "open"
+                            ? "bg-blue-100 text-blue-700"
+                            : "bg-green-100 text-green-700"
+                        }`}
+                      >
+                        {req.status}
+                      </span>
+                    </div>
+
+                    <div className="space-y-2 mb-4 text-sm text-slate-600">
+                      <p>
+                        📅 {new Date(req.start_time).toLocaleDateString()} •{" "}
+                        {new Date(req.start_time).toLocaleTimeString("en-US", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}{" "}
+                        -{" "}
+                        {new Date(req.end_time).toLocaleTimeString("en-US", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </p>
+                      {req.event_location && <p>📍 {req.event_location}</p>}
+                    </div>
+
+                    {req.status === "open" && (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 bg-slate-100 rounded p-2">
+                          <input
+                            type="text"
+                            readOnly
+                            value={`${window.location.origin}${req.share_link}`}
+                            className="flex-1 bg-transparent text-sm text-slate-600 outline-none"
+                          />
+                          <button
+                            onClick={() => copySwapLink(req.share_link, req.id)}
+                            className="p-1 hover:bg-slate-200 rounded transition-colors"
+                          >
+                            {copiedSwap === req.id ? (
+                              <Check className="h-4 w-4 text-green-600" />
+                            ) : (
+                              <Copy className="h-4 w-4 text-slate-600" />
+                            )}
+                          </button>
+                        </div>
+
+                        <button
+                          onClick={() => cancelSwapRequest(req.id)}
+                          className="w-full text-sm px-3 py-2 text-slate-600 hover:bg-red-50 hover:text-red-600 rounded transition-colors flex items-center justify-center gap-2"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          Cancel Request
+                        </button>
+                      </div>
+                    )}
+
+                    {req.status === "accepted" && (
+                      <div className="text-sm text-green-700 bg-green-50 p-2 rounded">
+                        ✓ Swap accepted!
+                      </div>
+                    )}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Clock className="h-4 w-4" />
-                    <span>
-                      {shift.startTime} - {shift.endTime}
+                ))}
+              </div>
+            </section>
+          )}
+        </>
+      )}
+
+      {activeTab === "open-shifts" && (
+        <section>
+          <h2 className="text-xl font-bold text-slate-900 mb-4 flex items-center gap-2">
+            <User className="h-5 w-5 text-blue-600" />
+            Available Opportunities
+          </h2>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {availableShifts.length === 0 ? (
+              <p className="text-slate-500 italic col-span-full">
+                No available shifts at the moment.
+              </p>
+            ) : (
+              availableShifts.map((shift) => (
+                <div
+                  key={shift.id}
+                  className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition-shadow"
+                >
+                  <div className="flex justify-between items-start mb-3">
+                    <div>
+                      <h3 className="font-semibold text-lg text-slate-900">
+                        {shift.eventTitle}
+                      </h3>
+                      <p className="text-slate-500 text-sm">{shift.role}</p>
+                    </div>
+                    <span className="bg-blue-50 text-blue-700 text-xs font-medium px-2.5 py-0.5 rounded-full">
+                      {shift.capacity - shift.spotsFilled} spots left
                     </span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <MapPin className="h-4 w-4" />
-                    <span>{shift.location}</span>
+
+                  <div className="space-y-2 text-sm text-slate-600 mb-4">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="h-4 w-4" />
+                      <span>{shift.date}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-4 w-4" />
+                      <span>
+                        {shift.startTime} - {shift.endTime}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <MapPin className="h-4 w-4" />
+                      <span>{shift.location}</span>
+                    </div>
                   </div>
-                </div>
-                {shift.status === "confirmed" && (
+
                   <button
-                    onClick={() => handleSwapRequest(shift.id)}
-                    className="w-full flex items-center justify-center gap-2 border border-slate-300 rounded-lg py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                    onClick={() => handleSignup(shift.id)}
+                    className="w-full bg-slate-900 text-white rounded-lg py-2 text-sm font-medium hover:bg-slate-800 transition-colors"
                   >
-                    <ArrowRightLeft className="h-4 w-4" />
-                    Request Swap
+                    Sign Up
                   </button>
-                )}
-              </div>
-            ))
-          )}
-        </div>
-      </section>
-
-      {/* Available Opportunities Section */}
-      <section>
-        <h2 className="text-xl font-bold text-slate-900 mb-4 flex items-center gap-2">
-          <User className="h-5 w-5 text-blue-600" />
-          Available Opportunities
-        </h2>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {availableShifts.map((shift) => (
-            <div
-              key={shift.id}
-              className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition-shadow"
-            >
-              <div className="flex justify-between items-start mb-3">
-                <div>
-                  <h3 className="font-semibold text-lg text-slate-900">
-                    {shift.eventTitle}
-                  </h3>
-                  <p className="text-slate-500 text-sm">{shift.role}</p>
                 </div>
-                <span className="bg-blue-50 text-blue-700 text-xs font-medium px-2.5 py-0.5 rounded-full">
-                  {shift.capacity - shift.spotsFilled} spots left
-                </span>
-              </div>
-              
-              <div className="space-y-2 text-sm text-slate-600 mb-4">
-                <div className="flex items-center gap-2">
-                  <Calendar className="h-4 w-4" />
-                  <span>{shift.date}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Clock className="h-4 w-4" />
-                  <span>
-                    {shift.startTime} - {shift.endTime}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <MapPin className="h-4 w-4" />
-                  <span>{shift.location}</span>
-                </div>
-              </div>
-
-              <button
-                onClick={() => handleSignup(shift.id)}
-                className="w-full bg-slate-900 text-white rounded-lg py-2 text-sm font-medium hover:bg-slate-800 transition-colors"
-              >
-                Sign Up
-              </button>
-            </div>
-          ))}
-        </div>
-      </section>
+              ))
+            )}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

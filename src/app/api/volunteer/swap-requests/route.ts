@@ -29,13 +29,14 @@ export async function GET() {
 
     const admin = adminClient();
 
-    // Get all open swap requests created by this user
+    // Get all non-cancelled swap requests created by this user
     const { data: requests, error: reqErr } = await admin
       .from("swap_requests")
       .select(
         "id, status, created_at, share_token, assignment_id, shift_assignments!inner(sub_shift_id, sub_shifts!inner(id, role_name, start_time, end_time, event_id, events!inner(id, title, start_time, end_time, location)))"
       )
       .eq("requester_id", user.id)
+      .neq("status", "cancelled")
       .order("created_at", { ascending: false });
 
     if (reqErr) throw reqErr;
@@ -138,6 +139,14 @@ export async function POST(request: Request) {
 
     if (insertErr) throw insertErr;
 
+    // Update assignment status to pending_swap
+    const { error: updateErr } = await admin
+      .from("shift_assignments")
+      .update({ status: "pending_swap" })
+      .eq("id", assignment_id);
+
+    if (updateErr) throw updateErr;
+
     return NextResponse.json({
       id: inserted.id,
       share_token: inserted.share_token,
@@ -172,7 +181,7 @@ export async function DELETE(request: Request) {
     // Verify this swap request belongs to the user
     const { data: swapRequest, error: fetchErr } = await admin
       .from("swap_requests")
-      .select("id, requester_id")
+      .select("id, requester_id, assignment_id")
       .eq("id", id)
       .single();
 
@@ -197,6 +206,14 @@ export async function DELETE(request: Request) {
       .eq("id", id);
 
     if (cancelErr) throw cancelErr;
+
+    // Update assignment status back to confirmed
+    const { error: updateErr } = await admin
+      .from("shift_assignments")
+      .update({ status: "confirmed" })
+      .eq("id", swapRequest.assignment_id);
+
+    if (updateErr) throw updateErr;
 
     return NextResponse.json({ success: true });
   } catch (e: any) {
