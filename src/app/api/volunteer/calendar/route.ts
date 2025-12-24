@@ -53,44 +53,12 @@ export async function GET(request: Request) {
     const now = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
     const events: string[] = [];
 
-    const parseDateTime = (dateStr: string, tz: string) => {
+    // Emit stored UTC instant directly as UTC to avoid double offsets
+    const formatUTC = (dateStr: string) => {
       if (!dateStr) return "";
-      
-      // Parse as a UTC moment
-      const date = new Date(dateStr);
-      
-      // Calculate timezone offset for this specific date
-      const parts = new Intl.DateTimeFormat("en-US", {
-        timeZone: tz,
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        hour12: false,
-      }).formatToParts(date);
-      
-      const lookup: { [key: string]: string } = {};
-      parts.forEach(part => {
-        if (part.type !== "literal") lookup[part.type] = part.value;
-      });
-      
-      // Calculate offset between timezone and UTC
-      const tzAsUTC = Date.UTC(
-        Number(lookup.year),
-        Number(lookup.month) - 1,
-        Number(lookup.day),
-        Number(lookup.hour),
-        Number(lookup.minute),
-        Number(lookup.second)
-      );
-      
-      const offset = tzAsUTC - date.getTime();
-      const utcDate = new Date(date.getTime() + offset);
-      
+      const d = new Date(dateStr);
       const pad = (n: number) => String(n).padStart(2, "0");
-      return `${utcDate.getUTCFullYear()}${pad(utcDate.getUTCMonth() + 1)}${pad(utcDate.getUTCDate())}T${pad(utcDate.getUTCHours())}${pad(utcDate.getUTCMinutes())}${pad(utcDate.getUTCSeconds())}Z`;
+      return `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}Z`;
     };
 
     (assignments ?? []).forEach((row: any) => {
@@ -99,8 +67,8 @@ export async function GET(request: Request) {
 
       if (!evt || !sub) return;
 
-      const startTime = parseDateTime(sub.start_time || evt.start_time || "", timezone);
-      const endTime = parseDateTime(sub.end_time || evt.end_time || "", timezone);
+      const startTime = formatUTC(sub.start_time || evt.start_time || "");
+      const endTime = formatUTC(sub.end_time || evt.end_time || "");
 
       if (!startTime || !endTime) return;
 

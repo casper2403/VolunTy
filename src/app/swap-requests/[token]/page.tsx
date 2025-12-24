@@ -170,12 +170,14 @@ export default function SwapRequestPage({
                       {
                         hour: "2-digit",
                         minute: "2-digit",
+                        hour12: false,
                       }
                     )}{" "}
                     -{" "}
                     {new Date(swapRequest?.end_time).toLocaleTimeString("en-US", {
                       hour: "2-digit",
                       minute: "2-digit",
+                      hour12: false,
                     })}
                   </span>
                 </div>

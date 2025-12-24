@@ -17,6 +17,7 @@ import {
 } from "date-fns";
 import { CalendarDays, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import CreateEventModal from "./CreateEventModal";
+import { combineDateAndTimeInTimezone } from "@/lib/timezone";
 
 interface CalendarEvent {
   id: string;
@@ -26,7 +27,9 @@ interface CalendarEvent {
   subShifts: {
     id: string;
     roleName: string;
+    startDate: string;
     startTime: string;
+    endDate: string;
     endTime: string;
     capacity: number;
   }[];
@@ -40,6 +43,28 @@ export default function AdminSchedule() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
+  const [timezone, setTimezone] = useState<string>("Europe/Brussels");
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    // Load timezone setting first
+    fetch("/api/settings")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.timezone) {
+          setTimezone(data.timezone);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const parseWallClockDate = (isoString: string): Date => {
+    // Parse UTC time as local wall-clock time
+    // "2025-12-24T09:00:00.000Z" should display as 9:00 local time
+    const [year, month, day] = isoString.slice(0, 10).split('-').map(Number);
+    const [hour, minute] = isoString.slice(11, 16).split(':').map(Number);
+    return new Date(year, month - 1, day, hour, minute);
+  };
 
   const loadEvents = async () => {
     const res = await fetch("/api/events");
@@ -48,15 +73,28 @@ export default function AdminSchedule() {
     const mapped: CalendarEvent[] = data.map((evt: any) => ({
       id: evt.id,
       title: evt.title,
-      start: new Date(evt.start_time),
-      end: new Date(evt.end_time),
-      subShifts: (evt.sub_shifts || []).map((s: any, idx: number) => ({
-        id: s.id || `${evt.id}-${idx}`,
-        roleName: s.role_name,
-        startTime: s.start_time?.slice(11, 16) ?? "",
-        endTime: s.end_time?.slice(11, 16) ?? "",
-        capacity: s.capacity ?? 0,
-      })),
+      start: parseWallClockDate(evt.start_time),
+      end: parseWallClockDate(evt.end_time),
+      subShifts: (evt.sub_shifts || [])
+        .sort((a: any, b: any) => {
+          // Sort by start_time, then by end_time
+          const aStart = a.start_time || "";
+          const bStart = b.start_time || "";
+          const startCompare = aStart.localeCompare(bStart);
+          if (startCompare !== 0) return startCompare;
+          const aEnd = a.end_time || "";
+          const bEnd = b.end_time || "";
+          return aEnd.localeCompare(bEnd);
+        })
+        .map((s: any, idx: number) => ({
+          id: s.id || `${evt.id}-${idx}`,
+          roleName: s.role_name,
+          startDate: (s.start_time || evt.start_time)?.slice(0, 10) ?? "",
+          startTime: (s.start_time || evt.start_time)?.slice(11, 16) ?? "",
+          endDate: (s.end_time || evt.end_time)?.slice(0, 10) ?? "",
+          endTime: (s.end_time || evt.end_time)?.slice(11, 16) ?? "",
+          capacity: s.capacity ?? 0,
+        })),
       capacity: evt.capacity ?? 0,
       filled: evt.filled ?? 0,
     }));
@@ -65,7 +103,7 @@ export default function AdminSchedule() {
 
   useEffect(() => {
     loadEvents();
-  }, []);
+  }, [timezone]);
 
   const calendarDays = useMemo(() => {
     const start = startOfWeek(startOfMonth(currentMonth), { weekStartsOn: 1 });
@@ -85,12 +123,8 @@ export default function AdminSchedule() {
     setIsModalOpen(true);
   };
 
-  const combineDateAndTime = (date: string, time: string) => {
-    const [year, month, day] = date.split("-").map(Number);
-    const [hours, minutes] = time.split(":").map(Number);
-    const local = new Date(year ?? 0, (month ?? 1) - 1, day ?? 1, hours ?? 0, minutes ?? 0);
-    return local.toISOString();
-  };
+  const combineDateAndTime = (date: string, time: string) =>
+    combineDateAndTimeInTimezone(date, time, timezone);
 
   const persistEvent = async (payload: any, existingId?: string) => {
     if (existingId) {
@@ -111,38 +145,87 @@ export default function AdminSchedule() {
   };
 
   const handleSaveEvent = async (evt: any) => {
-    const { id, title, dates, startTime, endTime, subShifts } = evt;
-    const buildPayload = (dateStr: string) => ({
-      title,
-      start_time: combineDateAndTime(dateStr, startTime),
-      end_time: combineDateAndTime(dateStr, endTime),
-      sub_shifts: subShifts.map((s: any) => ({
-        role_name: s.roleName,
-        start_time: combineDateAndTime(dateStr, s.startTime),
-        end_time: combineDateAndTime(dateStr, s.endTime),
-        capacity: s.capacity,
-      })),
-    });
-
-    if (id) {
-      const dateStr = dates[0];
-      await persistEvent(buildPayload(dateStr), id);
-    } else {
-      for (const dateStr of dates) {
-        await persistEvent(buildPayload(dateStr));
+    setIsSaving(true);
+    try {
+      const { id, title, startDate, endDate, startTime, endTime, subShifts } = evt;
+      
+      // Generate all dates between start and end date (inclusive)
+      const dates: string[] = [];
+      const current = new Date(startDate);
+      const end = new Date(endDate);
+      while (current <= end) {
+        const year = current.getFullYear();
+        const month = String(current.getMonth() + 1).padStart(2, '0');
+        const day = String(current.getDate()).padStart(2, '0');
+        dates.push(`${year}-${month}-${day}`);
+        current.setDate(current.getDate() + 1);
       }
-    }
 
-    await loadEvents();
-    setIsModalOpen(false);
-    setEditingEvent(null);
+      if (id) {
+        // For editing, only update the single event
+        const payload = {
+          title,
+          start_time: `${startDate}T${startTime}:00.000Z`,
+          end_time: `${endDate}T${endTime}:00.000Z`,
+          sub_shifts: subShifts.map((s: any) => ({
+            role_name: s.roleName,
+            start_time: `${s.startDate}T${s.startTime}:00.000Z`,
+            end_time: `${s.endDate}T${s.endTime}:00.000Z`,
+            capacity: s.capacity,
+          })),
+        };
+        await persistEvent(payload, id);
+      } else {
+        // For creating, create an event for each date
+        for (const dateStr of dates) {
+          const payload = {
+            title,
+            start_time: `${dateStr}T${startTime}:00.000Z`,
+            end_time: `${dateStr}T${endTime}:00.000Z`,
+            sub_shifts: subShifts.map((s: any) => {
+              // Only include sub-shifts that cover this date
+              if (s.startDate <= dateStr && dateStr <= s.endDate) {
+                return {
+                  role_name: s.roleName,
+                  start_time: `${dateStr}T${s.startTime}:00.000Z`,
+                  end_time: `${dateStr}T${s.endTime}:00.000Z`,
+                  capacity: s.capacity,
+                };
+              }
+              return null;
+            }).filter((s: any) => s !== null),
+          };
+          await persistEvent(payload);
+        }
+      }
+
+      await loadEvents();
+      setIsModalOpen(false);
+      setEditingEvent(null);
+    } catch (error) {
+      console.error("Failed to save event:", error);
+      alert("Failed to save event. Please try again.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleDeleteEvent = async (id: string) => {
-    await fetch(`/api/events?id=${id}`, { method: "DELETE" });
-    await loadEvents();
-    setIsModalOpen(false);
-    setEditingEvent(null);
+    setIsSaving(true);
+    try {
+      const res = await fetch(`/api/events?id=${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        throw new Error("Failed to delete event");
+      }
+      await loadEvents();
+      setIsModalOpen(false);
+      setEditingEvent(null);
+    } catch (error) {
+      console.error("Failed to delete event:", error);
+      alert("Failed to delete event. Please try again.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -236,8 +319,10 @@ export default function AdminSchedule() {
       <CreateEventModal
         isOpen={isModalOpen}
         onClose={() => {
-          setIsModalOpen(false);
-          setEditingEvent(null);
+          if (!isSaving) {
+            setIsModalOpen(false);
+            setEditingEvent(null);
+          }
         }}
         onSave={handleSaveEvent}
         onDelete={editingEvent ? handleDeleteEvent : undefined}
@@ -249,7 +334,8 @@ export default function AdminSchedule() {
           end: editingEvent.end,
           subShifts: editingEvent.subShifts,
         } : undefined}
-        timezone={Intl.DateTimeFormat().resolvedOptions().timeZone}
+        timezone={timezone}
+        isSaving={isSaving}
       />
     </div>
   );

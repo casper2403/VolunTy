@@ -11,12 +11,9 @@ function adminClient() {
 
 async function getUser() {
   const supabase = createServerSupabaseClient();
-  const {
-    data: { session },
-    error,
-  } = await supabase.auth.getSession();
+  const { data, error } = await supabase.auth.getUser();
   if (error) throw error;
-  return session?.user ?? null;
+  return data.user ?? null;
 }
 
 export async function GET() {
@@ -46,6 +43,7 @@ export async function GET() {
         role_name: sub?.role_name ?? "",
         start_time: sub?.start_time ?? evt?.start_time ?? null,
         end_time: sub?.end_time ?? evt?.end_time ?? null,
+        event_id: sub?.event_id ?? evt?.id ?? null,
         event_title: evt?.title ?? "",
         event_location: evt?.location ?? null,
         event_start_time: evt?.start_time ?? null,
@@ -94,6 +92,40 @@ export async function POST(request: Request) {
     const filled = count ?? 0;
     if (capacity > 0 && filled >= capacity) {
       return NextResponse.json({ error: "Shift is full" }, { status: 409 });
+    }
+
+    // Prevent signing up for overlapping shifts
+    const effectiveStart = subShift.start_time ?? (Array.isArray(subShift.events) ? subShift.events[0]?.start_time : (subShift.events as any)?.start_time);
+    const effectiveEnd = subShift.end_time ?? (Array.isArray(subShift.events) ? subShift.events[0]?.end_time : (subShift.events as any)?.end_time);
+
+    if (effectiveStart && effectiveEnd) {
+      const { data: existingAssignments, error: existingErr } = await admin
+        .from("shift_assignments")
+        .select(
+          "id,status,sub_shifts!inner(start_time,end_time,event_id,events!sub_shifts_event_id_fkey(id,start_time,end_time))"
+        )
+        .eq("user_id", user.id)
+        .in("status", ["confirmed", "pending_swap"]);
+
+      if (existingErr) throw existingErr;
+
+      const aStart = new Date(effectiveStart).getTime();
+      const aEnd = new Date(effectiveEnd).getTime();
+
+      const hasOverlap = (existingAssignments ?? []).some((row: any) => {
+        const sub = row.sub_shifts;
+        const evt = sub?.events;
+        const bStartISO = sub?.start_time ?? evt?.start_time;
+        const bEndISO = sub?.end_time ?? evt?.end_time;
+        if (!bStartISO || !bEndISO) return false;
+        const bStart = new Date(bStartISO).getTime();
+        const bEnd = new Date(bEndISO).getTime();
+        return aStart < bEnd && bStart < aEnd;
+      });
+
+      if (hasOverlap) {
+        return NextResponse.json({ error: "Shift overlaps with your existing schedule" }, { status: 409 });
+      }
     }
 
     const { data: inserted, error: insertErr } = await admin

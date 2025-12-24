@@ -52,7 +52,18 @@ export async function GET() {
     }
 
     const payload = (events ?? []).map((e: any) => {
-      const subShifts = (e.sub_shifts ?? []).map((s: any) => ({
+      const subShifts = (e.sub_shifts ?? [])
+        .sort((a: any, b: any) => {
+          // Sort by start_time, then by end_time (for consistent ordering of overlapping shifts)
+          const aStart = a.start_time || "";
+          const bStart = b.start_time || "";
+          const startCompare = aStart.localeCompare(bStart);
+          if (startCompare !== 0) return startCompare;
+          const aEnd = a.end_time || "";
+          const bEnd = b.end_time || "";
+          return aEnd.localeCompare(bEnd);
+        })
+        .map((s: any) => ({
         ...s,
         filled: filledBySubShift[s.id] ?? 0,
         available: Math.max((s.capacity ?? 0) - (filledBySubShift[s.id] ?? 0), 0),
@@ -151,6 +162,7 @@ export async function PUT(request: Request) {
       );
 
       // Delete sub_shifts that no longer exist (this cascades to delete assignments)
+      // Only delete if the role_name|start_time|end_time combination is completely gone
       const idsToDelete = (existingSubShifts ?? [])
         .filter((s) => !newSpecs.has(`${s.role_name}|${s.start_time}|${s.end_time}`))
         .map((s) => s.id);
@@ -164,12 +176,13 @@ export async function PUT(request: Request) {
       }
 
       // Insert or update remaining sub_shifts
+      // IMPORTANT: Only update capacity, never recreate to preserve shift assignments
       for (const newSpec of newSubShiftSpecs) {
         const key = `${newSpec.role_name}|${newSpec.start_time}|${newSpec.end_time}`;
         const existing = existingMap.get(key);
 
         if (existing) {
-          // Update capacity if needed
+          // Update capacity if needed - preserves all shift assignments
           if (existing.capacity !== newSpec.capacity) {
             const { error: upErr } = await admin
               .from("sub_shifts")
@@ -177,8 +190,9 @@ export async function PUT(request: Request) {
               .eq("id", existing.id);
             if (upErr) throw upErr;
           }
+          // If capacity is the same, do nothing - don't touch the sub_shift
         } else {
-          // Insert new sub_shift
+          // Insert new sub_shift only if it's completely new
           const { error: insErr } = await admin.from("sub_shifts").insert({
             event_id: id,
             ...newSpec,

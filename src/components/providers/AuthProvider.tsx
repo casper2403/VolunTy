@@ -59,15 +59,13 @@ export function AuthProvider({
         let activeSession = session;
 
         if (!activeSession) {
-          const {
-            data: { session: fetchedSession },
-          } = await supabase.auth.getSession();
+          const { data: fetchedData } = await supabase.auth.getUser();
 
           if (!isMounted) return;
 
-          activeSession = fetchedSession;
-          setSession(fetchedSession);
-          setUser(fetchedSession?.user ?? null);
+          activeSession = fetchedData.user ? { user: fetchedData.user } as Session : null;
+          setSession(activeSession);
+          setUser(fetchedData.user ?? null);
         }
 
         if (activeSession?.user && initialRole === undefined) {

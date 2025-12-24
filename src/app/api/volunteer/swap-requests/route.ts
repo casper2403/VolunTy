@@ -12,12 +12,9 @@ function adminClient() {
 
 async function getUser() {
   const supabase = createServerSupabaseClient();
-  const {
-    data: { session },
-    error,
-  } = await supabase.auth.getSession();
+  const { data, error } = await supabase.auth.getUser();
   if (error) throw error;
-  return session?.user ?? null;
+  return data.user ?? null;
 }
 
 export async function GET() {
@@ -29,15 +26,13 @@ export async function GET() {
 
     const admin = adminClient();
 
-    // Get all non-cancelled swap requests created by this user
+    // Get all open/accepted swap requests (including other users) for timeline context
     const { data: requests, error: reqErr } = await admin
       .from("swap_requests")
       .select(
-        "id, status, created_at, share_token, assignment_id, shift_assignments!inner(sub_shift_id, sub_shifts!inner(id, role_name, start_time, end_time, event_id, events!inner(id, title, start_time, end_time, location)))"
+        "id,status,created_at,share_token,assignment_id,requester_id,shift_assignments!inner(sub_shift_id,sub_shifts!inner(id,role_name,start_time,end_time,event_id,events!inner(id,title,start_time,end_time,location)))"
       )
-      .eq("requester_id", user.id)
-      .neq("status", "cancelled")
-      .order("created_at", { ascending: false });
+      .in("status", ["open", "accepted"]);
 
     if (reqErr) throw reqErr;
 
@@ -51,6 +46,9 @@ export async function GET() {
         status: r.status,
         created_at: r.created_at,
         share_token: r.share_token,
+        is_mine: r.requester_id === user.id,
+        requester_id: r.requester_id,
+        event_id: event?.id ?? null,
         role_name: subShift?.role_name ?? "",
         start_time: subShift?.start_time ?? event?.start_time,
         end_time: subShift?.end_time ?? event?.end_time,

@@ -32,7 +32,9 @@ type CalendarEvent = {
   subShifts: {
     id: string;
     roleName: string;
+    startDate: string;
     startTime: string;
+    endDate: string;
     endTime: string;
     capacity: number;
   }[];
@@ -46,6 +48,7 @@ export default function AdminCalendar() {
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
   const [timezone, setTimezone] = useState<string>("Europe/Brussels");
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     // Load timezone setting
@@ -62,6 +65,14 @@ export default function AdminCalendar() {
   const combineDateAndTime = (date: string, time: string) =>
     combineDateAndTimeInTimezone(date, time, timezone);
 
+  const parseWallClockDate = (isoString: string): Date => {
+    // Parse UTC time as local wall-clock time
+    // "2025-12-24T09:00:00.000Z" should display as 9:00 local time
+    const [year, month, day] = isoString.slice(0, 10).split('-').map(Number);
+    const [hour, minute] = isoString.slice(11, 16).split(':').map(Number);
+    return new Date(year, month - 1, day, hour, minute);
+  };
+
   const loadEvents = async () => {
     const res = await fetch("/api/events");
     if (!res.ok) return;
@@ -69,15 +80,33 @@ export default function AdminCalendar() {
     const mapped: CalendarEvent[] = data.map((evt: any) => ({
       id: evt.id,
       title: evt.title,
-      start: new Date(evt.start_time),
-      end: new Date(evt.end_time),
-      subShifts: (evt.sub_shifts || []).map((s: any, idx: number) => ({
-        id: s.id || `${evt.id}-${idx}`,
-        roleName: s.role_name,
-        startTime: formatTimeInTimezone(new Date(s.start_time), timezone),
-        endTime: formatTimeInTimezone(new Date(s.end_time), timezone),
-        capacity: s.capacity ?? 0,
-      })),
+      start: parseWallClockDate(evt.start_time),
+      end: parseWallClockDate(evt.end_time),
+      subShifts: (evt.sub_shifts || [])
+        .sort((a: any, b: any) => {
+          // Sort by start_time, then by end_time
+          const aStart = a.start_time || "";
+          const bStart = b.start_time || "";
+          const startCompare = aStart.localeCompare(bStart);
+          if (startCompare !== 0) return startCompare;
+          const aEnd = a.end_time || "";
+          const bEnd = b.end_time || "";
+          return aEnd.localeCompare(bEnd);
+        })
+        .map((s: any, idx: number) => {
+          // Parse times directly from ISO strings (HH:MM format)
+          const startISO = s.start_time || evt.start_time;
+          const endISO = s.end_time || evt.end_time;
+          return {
+            id: s.id || `${evt.id}-${idx}`,
+            roleName: s.role_name,
+            startDate: startISO?.slice(0, 10) ?? "",
+            startTime: startISO ? startISO.slice(11, 16) : "00:00",
+            endDate: endISO?.slice(0, 10) ?? "",
+            endTime: endISO ? endISO.slice(11, 16) : "00:00",
+            capacity: s.capacity ?? 0,
+          };
+        }),
       resource: {
         filled: evt.filled ?? 0,
         capacity: evt.capacity ?? 0,
@@ -102,49 +131,102 @@ export default function AdminCalendar() {
   };
 
   const handleSaveEvent = async (eventData: any) => {
-    const { id, title, dates, startTime, endTime, subShifts } = eventData;
-    const buildPayload = (dateStr: string) => ({
-      title,
-      start_time: combineDateAndTime(dateStr, startTime),
-      end_time: combineDateAndTime(dateStr, endTime),
-      sub_shifts: subShifts.map((s: any) => ({
-        role_name: s.roleName,
-        start_time: combineDateAndTime(dateStr, s.startTime),
-        end_time: combineDateAndTime(dateStr, s.endTime),
-        capacity: s.capacity,
-      })),
-    });
-
-    if (editingEvent || id) {
-      const targetDate = dates[0];
-      const res = await fetch("/api/events", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: editingEvent?.id ?? id, ...buildPayload(targetDate) }),
-      });
-      if (!res.ok) return;
-    } else {
-      for (const dateStr of dates) {
+    setIsSaving(true);
+    try {
+      const { id, title, startDate, endDate, startTime, endTime, subShifts } = eventData;
+      
+      if (editingEvent || id) {
+        // For editing, update the single event
         const res = await fetch("/api/events", {
-          method: "POST",
+          method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(buildPayload(dateStr)),
+          body: JSON.stringify({
+            id: editingEvent?.id ?? id,
+            title,
+            start_time: `${startDate}T${startTime}:00.000Z`,
+            end_time: `${endDate}T${endTime}:00.000Z`,
+            sub_shifts: subShifts.map((s: any) => ({
+              role_name: s.roleName,
+              start_time: `${s.startDate}T${s.startTime}:00.000Z`,
+              end_time: `${s.endDate}T${s.endTime}:00.000Z`,
+              capacity: s.capacity,
+            })),
+          }),
         });
-        if (!res.ok) return;
-      }
-    }
+        if (!res.ok) {
+          const error = await res.json();
+          throw new Error(error.error || "Failed to update event");
+        }
+      } else {
+        // For creating, generate all dates between start and end
+        const dates: string[] = [];
+        const current = new Date(startDate);
+        const end = new Date(endDate);
+        while (current <= end) {
+          const year = current.getFullYear();
+          const month = String(current.getMonth() + 1).padStart(2, '0');
+          const day = String(current.getDate()).padStart(2, '0');
+          dates.push(`${year}-${month}-${day}`);
+          current.setDate(current.getDate() + 1);
+        }
 
-    await loadEvents();
-    setEditingEvent(null);
-    setIsModalOpen(false);
+        for (const dateStr of dates) {
+          const res = await fetch("/api/events", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title,
+              start_time: `${dateStr}T${startTime}:00.000Z`,
+              end_time: `${dateStr}T${endTime}:00.000Z`,
+              sub_shifts: subShifts.map((s: any) => {
+                // Only include sub-shifts that cover this date
+                if (s.startDate <= dateStr && dateStr <= s.endDate) {
+                  return {
+                    role_name: s.roleName,
+                    start_time: `${dateStr}T${s.startTime}:00.000Z`,
+                    end_time: `${dateStr}T${s.endTime}:00.000Z`,
+                    capacity: s.capacity,
+                  };
+                }
+                return null;
+              }).filter((s: any) => s !== null),
+            }),
+          });
+          if (!res.ok) {
+            const error = await res.json();
+            throw new Error(error.error || "Failed to create event");
+          }
+        }
+      }
+
+      await loadEvents();
+      setEditingEvent(null);
+      setIsModalOpen(false);
+    } catch (error) {
+      console.error("Failed to save event:", error);
+      alert(`Failed to save event: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleDeleteEvent = async (id: string) => {
-    const res = await fetch(`/api/events?id=${id}`, { method: "DELETE" });
-    if (!res.ok) return;
-    await loadEvents();
-    setEditingEvent(null);
-    setIsModalOpen(false);
+    setIsSaving(true);
+    try {
+      const res = await fetch(`/api/events?id=${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Failed to delete event");
+      }
+      await loadEvents();
+      setEditingEvent(null);
+      setIsModalOpen(false);
+    } catch (error) {
+      console.error("Failed to delete event:", error);
+      alert(`Failed to delete event: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleSelectEvent = (event: any) => {
@@ -209,14 +291,17 @@ export default function AdminCalendar() {
       <CreateEventModal
         isOpen={isModalOpen}
         onClose={() => {
-          setIsModalOpen(false);
-          setEditingEvent(null);
+          if (!isSaving) {
+            setIsModalOpen(false);
+            setEditingEvent(null);
+          }
         }}
         onSave={handleSaveEvent}
         onDelete={editingEvent ? handleDeleteEvent : undefined}
         initialDate={selectedDate}
         initialEvent={editingEvent ?? undefined}
         timezone={timezone}
+        isSaving={isSaving}
       />
     </div>
   );

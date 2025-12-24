@@ -49,8 +49,8 @@ function getTimeZoneOffset(date: Date, timezone: string): number {
 }
 
 /**
- * Convert a date string and time string (interpreted in the provided timezone) to an ISO string.
- * Ensures we store the correct UTC instant regardless of the browser's local timezone.
+ * Convert a date string and time string to an ISO string.
+ * Stores the time as-is in UTC format (treating the input as wall-clock time).
  */
 export function combineDateAndTimeInTimezone(
   date: string,
@@ -60,12 +60,9 @@ export function combineDateAndTimeInTimezone(
   const [year, month, day] = date.split("-").map(Number);
   const [hour, minute] = time.split(":").map(Number);
 
-  // Build a candidate UTC date with the provided wall time fields
-  const candidate = new Date(Date.UTC(year, month - 1, day, hour, minute, 0));
-  const offset = getTimeZoneOffset(candidate, timezone);
-
-  // Adjust by the timezone's offset to arrive at the correct UTC instant
-  return new Date(candidate.getTime() - offset).toISOString();
+  // Build UTC date with the provided wall time fields directly
+  // This stores "9:00" as "09:00:00.000Z" without timezone offset
+  return new Date(Date.UTC(year, month - 1, day, hour, minute, 0)).toISOString();
 }
 
 /**

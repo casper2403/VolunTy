@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Copy, Check, Trash2, AlertCircle } from "lucide-react";
+import { Copy, Check, Trash2, AlertCircle, Calendar, Clock } from "lucide-react";
 
 export default function VolunteerSwapRequests() {
   const [requests, setRequests] = useState<any[]>([]);
@@ -88,43 +88,39 @@ export default function VolunteerSwapRequests() {
       <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
         My Swap Requests
       </h3>
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {requests.map((req) => (
           <div
             key={req.id}
-            className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 shadow-sm hover:shadow-md transition-shadow"
+            className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-5 shadow-sm relative overflow-hidden"
           >
-            <div className="flex items-start justify-between mb-3">
-              <div>
-                <p className="font-semibold text-slate-900 dark:text-white">
-                  {req.event_title}
-                </p>
-                <p className="text-sm text-slate-600 dark:text-slate-400">
-                  {req.role_name}
-                </p>
+            {req.status === "open" && (
+              <div className="absolute top-0 right-0 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-300 text-xs font-bold px-2 py-1 rounded-bl-lg">
+                Open
               </div>
-              <span
-                className={`text-xs font-medium px-2 py-1 rounded-full ${
-                  req.status === "open"
-                    ? "bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300"
-                    : req.status === "accepted"
-                      ? "bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300"
-                      : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
-                }`}
-              >
-                {req.status}
-              </span>
+            )}
+            {req.status === "accepted" && (
+              <div className="absolute top-0 right-0 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-300 text-xs font-bold px-2 py-1 rounded-bl-lg">
+                Accepted
+              </div>
+            )}
+            <div className="mb-3">
+              <h3 className="font-semibold text-lg text-slate-900 dark:text-white">
+                {req.event_title}
+              </h3>
+              <p className="text-blue-600 dark:text-blue-400 font-medium">{req.role_name}</p>
             </div>
-
-            <div className="space-y-2 mb-4 text-sm text-slate-600 dark:text-slate-400">
-              <p>
-                📅 {new Date(req.start_time).toLocaleDateString()} •{" "}
-                {new Date(req.start_time).toLocaleTimeString("en-US", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })} - {new Date(req.end_time).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}
-              </p>
-              {req.event_location && <p>📍 {req.event_location}</p>}
+            <div className="space-y-2 text-sm text-slate-600 dark:text-slate-400 mb-4">
+              <div className="flex items-center gap-2">
+                <Calendar className="h-4 w-4" />
+                <span>{req.start_time?.slice(0, 10)}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Clock className="h-4 w-4" />
+                <span>
+                  {req.start_time?.slice(11, 16)} - {req.end_time?.slice(11, 16)}
+                </span>
+              </div>
             </div>
 
             {req.status === "open" && (

@@ -11,12 +11,9 @@ function adminClient() {
 
 async function getUser() {
   const supabase = createServerSupabaseClient();
-  const {
-    data: { session },
-    error,
-  } = await supabase.auth.getSession();
+  const { data, error } = await supabase.auth.getUser();
   if (error) throw error;
-  return session?.user ?? null;
+  return data.user ?? null;
 }
 
 export async function GET(
