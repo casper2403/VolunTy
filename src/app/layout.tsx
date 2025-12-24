@@ -20,16 +20,16 @@ export default async function RootLayout({
 }>) {
   const supabase = createServerSupabaseClient();
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
 
   let role: string | null = null;
 
-  if (user) {
+  if (session?.user) {
     const { data, error } = await supabase
       .from("profiles")
       .select("role")
-      .eq("id", user.id)
+      .eq("id", session.user.id)
       .single();
 
     if (!error) {
@@ -40,7 +40,7 @@ export default async function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        <AuthProvider initialSession={user ? { user } : null} initialRole={role}>
+        <AuthProvider initialSession={session} initialRole={role}>
           <header className="border-b border-slate-200 bg-white">
             <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 w-full">
               <Link href="/" className="text-lg font-bold text-slate-900 hover:text-slate-600 transition-colors flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-slate-100">
