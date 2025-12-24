@@ -19,6 +19,13 @@ export async function GET(request: Request) {
 
     const admin = adminClient();
 
+    // Fetch organization timezone from settings
+    const { data: settings } = await admin
+      .from("settings")
+      .select("timezone")
+      .single();
+    const timezone = settings?.timezone || "Europe/Brussels";
+
     // Lookup user by calendar token
     const { data: profile, error: profileErr } = await admin
       .from("profiles")
@@ -46,22 +53,54 @@ export async function GET(request: Request) {
     const now = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
     const events: string[] = [];
 
+    const parseDateTime = (dateStr: string, tz: string) => {
+      if (!dateStr) return "";
+      
+      // Parse as a UTC moment
+      const date = new Date(dateStr);
+      
+      // Calculate timezone offset for this specific date
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: tz,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      }).formatToParts(date);
+      
+      const lookup: { [key: string]: string } = {};
+      parts.forEach(part => {
+        if (part.type !== "literal") lookup[part.type] = part.value;
+      });
+      
+      // Calculate offset between timezone and UTC
+      const tzAsUTC = Date.UTC(
+        Number(lookup.year),
+        Number(lookup.month) - 1,
+        Number(lookup.day),
+        Number(lookup.hour),
+        Number(lookup.minute),
+        Number(lookup.second)
+      );
+      
+      const offset = tzAsUTC - date.getTime();
+      const utcDate = new Date(date.getTime() + offset);
+      
+      const pad = (n: number) => String(n).padStart(2, "0");
+      return `${utcDate.getUTCFullYear()}${pad(utcDate.getUTCMonth() + 1)}${pad(utcDate.getUTCDate())}T${pad(utcDate.getUTCHours())}${pad(utcDate.getUTCMinutes())}${pad(utcDate.getUTCSeconds())}Z`;
+    };
+
     (assignments ?? []).forEach((row: any) => {
       const sub = row.sub_shifts;
       const evt = sub?.events;
 
       if (!evt || !sub) return;
 
-      const parseDateTime = (dateStr: string) => {
-        if (!dateStr) return "";
-        // Extract YYYY-MM-DDTHH:MM:SS and convert to ICS UTC format (20251223T140000Z)
-        const match = dateStr.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
-        if (!match) return "";
-        return `${match[1]}${match[2]}${match[3]}T${match[4]}${match[5]}${match[6]}Z`;
-      };
-
-      const startTime = parseDateTime(sub.start_time || evt.start_time || "");
-      const endTime = parseDateTime(sub.end_time || evt.end_time || "");
+      const startTime = parseDateTime(sub.start_time || evt.start_time || "", timezone);
+      const endTime = parseDateTime(sub.end_time || evt.end_time || "", timezone);
 
       if (!startTime || !endTime) return;
 
