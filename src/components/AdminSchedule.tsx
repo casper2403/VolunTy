@@ -166,7 +166,7 @@ export default function AdminSchedule() {
 
       if (id) {
         // For editing, only update the single event
-        let payload = {
+        let payload: any = {
           title,
           start_time: `${startDate}T${startTime}:00.000Z`,
           end_time: `${endDate}T${endTime}:00.000Z`,
