@@ -131,9 +131,20 @@ export function AuthProvider({
   };
 
   const signOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      console.error("Error signing out:", error.message);
+    try {
+      // Clear local state first
+      setUser(null);
+      setSession(null);
+      setRole(null);
+      
+      // Sign out from Supabase
+      const { error } = await supabase.auth.signOut({ scope: 'local' });
+      if (error) {
+        console.error("Error signing out:", error.message);
+        throw error;
+      }
+    } catch (error) {
+      console.error("Sign out failed:", error);
       throw error;
     }
   };
